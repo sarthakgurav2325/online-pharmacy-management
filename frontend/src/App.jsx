@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import "./App.css";
 
-const API = "http://localhost:8080/api";
+const API = "https://online-pharmacy-management-3.onrender.com/api";
 const LOW_STOCK_LIMIT = 10;
 
 const emptyForm = {
