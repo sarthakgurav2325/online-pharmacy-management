@@ -16,19 +16,26 @@ import {
   Menu,
   TrendingUp,
   IndianRupee,
-  CalendarDays,
   CheckCircle,
   ClipboardList,
+  CalendarDays,
+  Users,
+  UserPlus,
+  Mail,
+  Phone,
+  MapPin,
+  ShoppingCart,
 } from "lucide-react";
 import "./App.css";
 
-const API = "https://online-pharmacy-management-3.onrender.com/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 const LOW_STOCK_LIMIT = 10;
 
 const emptyForm = {
   name: "",
   description: "",
   manufacturer: "",
+  batchNumber: "",
   price: "",
   stock: "",
   expiryDate: "",
@@ -43,61 +50,134 @@ function getArray(data) {
   return [];
 }
 
+function getExpiryStatus(expiryDate) {
+  if (!expiryDate) return "Unknown";
+
+  const expiry = new Date(`${expiryDate}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (Number.isNaN(expiry.getTime())) return "Unknown";
+  if (expiry < today) return "Expired";
+
+  const days = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
+
+  if (days <= 30) return "Expiring Soon";
+  return "Valid";
+}
+
+function getStockStatus(medicine) {
+  const stock = Number(medicine.stock || 0);
+
+  if (stock <= 0) return "Out of Stock";
+  if (stock <= LOW_STOCK_LIMIT) return "Low Stock";
+
+  return "Available";
+}
+
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [medicines, setMedicines] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState(null);
+  const [customerSaving, setCustomerSaving] = useState(false);
+
+  const [customerForm, setCustomerForm] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    address: "",
+  });
+
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  // ORDER MANAGEMENT STATE
+  const [showOrderForm, setShowOrderForm] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState(null);
+  const [orderSaving, setOrderSaving] = useState(false);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
+  const [cart, setCart] = useState([]);
+  const [selectedMedicine, setSelectedMedicine] = useState("");
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const [medicineResponse, categoryResponse] = await Promise.all([
+      const [
+        medicineResponse,
+        categoryResponse,
+        customerResponse,
+        orderResponse,
+      ] = await Promise.all([
         axios.get(`${API}/medicines`),
         axios.get(`${API}/categories`),
+        axios.get(`${API}/customers`),
+        axios.get(`${API}/orders`),
       ]);
 
       setMedicines(getArray(medicineResponse.data));
       setCategories(getArray(categoryResponse.data));
+      setCustomers(getArray(customerResponse.data));
+      setOrders(getArray(orderResponse.data));
     } catch (err) {
-      console.error("Unable to load pharmacy data:", err);
-      setError(
-        "Could not connect to the backend. Make sure Spring Boot is running on port 8080."
-      );
+      console.error(err);
+      setError("Unable to load data. Please check your backend connection.");
     } finally {
       setLoading(false);
     }
   }, []);
 
- useEffect(() => {
+  useEffect(() => {
   const fetchData = async () => {
     await loadData();
   };
 
   fetchData();
 }, [loadData]);
-
   const totalMedicines = medicines.length;
   const totalCategories = categories.length;
 
   const lowStockMedicines = medicines.filter(
-    (medicine) => Number(medicine.stock) <= LOW_STOCK_LIMIT
+    (m) => getStockStatus(m) === "Low Stock"
+  );
+
+  const outOfStockMedicines = medicines.filter(
+    (m) => getStockStatus(m) === "Out of Stock"
+  );
+
+  const expiredMedicines = medicines.filter(
+    (m) => getExpiryStatus(m.expiryDate) === "Expired"
+  );
+
+  const expiringSoonMedicines = medicines.filter(
+    (m) => getExpiryStatus(m.expiryDate) === "Expiring Soon"
   );
 
   const inventoryValue = medicines.reduce(
-    (total, medicine) =>
-      total +
-      Number(medicine.price || 0) * Number(medicine.stock || 0),
+    (total, m) => total + Number(m.price || 0) * Number(m.stock || 0),
+    0
+  );
+
+  const totalStock = medicines.reduce(
+    (total, m) => total + Number(m.stock || 0),
     0
   );
 
@@ -107,27 +187,62 @@ function App() {
     if (!term) return medicines;
 
     return medicines.filter((medicine) => {
-      const categoryName =
-        medicine.category?.categoryName ||
-        medicine.category?.name ||
-        "";
+      const category =
+        medicine.category?.categoryName || medicine.category?.name || "";
 
       return [
         medicine.name,
         medicine.manufacturer,
         medicine.description,
-        categoryName,
+        category,
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term));
     });
   }, [medicines, search]);
 
+  const filteredCustomers = useMemo(() => {
+    const term = customerSearch.trim().toLowerCase();
+
+    if (!term) return customers;
+
+    return customers.filter((customer) =>
+      [
+        customer.fullName,
+        customer.email,
+        customer.phone,
+        customer.address,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    );
+  }, [customers, customerSearch]);
+
+  const filteredOrders = useMemo(() => {
+    const term = orderSearch.trim().toLowerCase();
+
+    if (!term) return orders;
+
+    return orders.filter((order) =>
+      [
+        order.id,
+        order.customer?.fullName,
+        order.status,
+        order.shippingAddress,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    );
+  }, [orders, orderSearch]);
+
   const navigate = (page) => {
     setActivePage(page);
     setMobileMenuOpen(false);
     setSearch("");
+    setCustomerSearch("");
+    setOrderSearch("");
     setError("");
+    setSuccess("");
   };
 
   const openAddForm = () => {
@@ -136,15 +251,18 @@ function App() {
       ...emptyForm,
       categoryId: categories[0]?.id ? String(categories[0].id) : "",
     });
+    setError("");
     setShowForm(true);
   };
 
   const editMedicine = (medicine) => {
     setEditingId(medicine.id);
+
     setForm({
       name: medicine.name || "",
       description: medicine.description || "",
       manufacturer: medicine.manufacturer || "",
+      batchNumber: medicine.batchNumber || "",
       price: medicine.price ?? "",
       stock: medicine.stock ?? "",
       expiryDate: medicine.expiryDate || "",
@@ -153,6 +271,8 @@ function App() {
         ? String(medicine.category.id)
         : "",
     });
+
+    setError("");
     setShowForm(true);
   };
 
@@ -167,19 +287,25 @@ function App() {
 
   const saveMedicine = async (event) => {
     event.preventDefault();
-    setSaving(true);
-    setError("");
 
     if (!form.categoryId) {
       setError("Please select a medicine category.");
-      setSaving(false);
       return;
     }
+
+    if (Number(form.price) < 0 || Number(form.stock) < 0) {
+      setError("Price and stock cannot be negative.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
 
     const payload = {
       name: form.name.trim(),
       description: form.description.trim(),
       manufacturer: form.manufacturer.trim(),
+      batchNumber: form.batchNumber.trim(),
       price: Number(form.price),
       stock: Number(form.stock),
       expiryDate: form.expiryDate,
@@ -190,8 +316,10 @@ function App() {
     try {
       if (editingId !== null) {
         await axios.put(`${API}/medicines/${editingId}`, payload);
+        setSuccess("Medicine updated successfully.");
       } else {
         await axios.post(`${API}/medicines`, payload);
+        setSuccess("Medicine added successfully.");
       }
 
       setShowForm(false);
@@ -199,10 +327,10 @@ function App() {
       setForm(emptyForm);
       await loadData();
     } catch (err) {
-      console.error("Unable to save medicine:", err);
+      console.error(err);
       setError(
         err.response?.data?.message ||
-          "Unable to save medicine. Please check your backend API and form details."
+        "Unable to save medicine. Check the backend API."
       );
     } finally {
       setSaving(false);
@@ -217,27 +345,337 @@ function App() {
     if (!confirmed) return;
 
     setError("");
+    setSuccess("");
 
     try {
       await axios.delete(`${API}/medicines/${id}`);
+      setSuccess("Medicine deleted successfully.");
       await loadData();
     } catch (err) {
-      console.error("Unable to delete medicine:", err);
-      setError("Unable to delete this medicine. Please try again.");
+      console.error(err);
+      setError("Unable to delete medicine.");
     }
   };
 
-  const pageTitles = {
-    dashboard: "Dashboard",
-    medicines: "Medicines",
-    categories: "Categories",
-    inventory: "Inventory",
+  const openCustomerForm = (customer = null) => {
+    setEditingCustomerId(customer?.id ?? null);
+    setCustomerForm({
+      fullName: customer?.fullName || "",
+      email: customer?.email || "",
+      phone: customer?.phone || "",
+      address: customer?.address || "",
+    });
+    setError("");
+    setShowCustomerForm(true);
+  };
+
+  const handleCustomerFormChange = (event) => {
+    const { name, value } = event.target;
+    setCustomerForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const saveCustomer = async (event) => {
+    event.preventDefault();
+
+    if (!customerForm.fullName.trim() || !customerForm.phone.trim()) {
+      setError("Customer name and phone number are required.");
+      return;
+    }
+
+    setCustomerSaving(true);
+    setError("");
+    setSuccess("");
+
+    const payload = {
+  fullName: customerForm.fullName.trim(),
+  email: customerForm.email.trim(),
+  phone: customerForm.phone.trim(),
+  address: customerForm.address.trim(),
+};
+
+    try {
+      if (editingCustomerId !== null) {
+        await axios.put(`${API}/customers/${editingCustomerId}`, payload);
+        setSuccess("Customer updated successfully.");
+      } else {
+        await axios.post(`${API}/customers`, payload);
+        setSuccess("Customer added successfully.");
+      }
+
+      setShowCustomerForm(false);
+      setEditingCustomerId(null);
+      setCustomerForm({
+        fullName: "",
+        email: "",
+        phone: "",
+        address: "",
+      });
+
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setError(
+        err.response?.data?.message ||
+        "Unable to save customer. Please check the details."
+      );
+    } finally {
+      setCustomerSaving(false);
+    }
+  };
+
+  const deleteCustomer = async (id) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this customer?"
+    );
+
+    if (!confirmed) return;
+
+    setError("");
+    setSuccess("");
+
+    try {
+      await axios.delete(`${API}/customers/${id}`);
+      setSuccess("Customer deleted successfully.");
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setError("Unable to delete customer.");
+    }
+  };
+
+  // ORDER MANAGEMENT FUNCTIONS
+
+  const openOrderForm = () => {
+    setSelectedCustomer("");
+    setShippingAddress("");
+    setCart([]);
+    setSelectedMedicine("");
+    setSelectedQuantity(1);
+    setError("");
+    setShowOrderForm(true);
+  };
+
+  const addToCart = () => {
+    const medicine = medicines.find(
+      (m) => Number(m.id) === Number(selectedMedicine)
+    );
+
+    const quantity = Number(selectedQuantity);
+
+    if (!medicine) {
+      setError("Please select a medicine.");
+      return;
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setError("Enter a valid quantity.");
+      return;
+    }
+
+    if (getExpiryStatus(medicine.expiryDate) === "Expired") {
+      setError("Expired medicines cannot be ordered.");
+      return;
+    }
+
+    const existing = cart.find(
+      (item) => Number(item.medicineId) === Number(medicine.id)
+    );
+
+    const newQuantity = (existing?.quantity || 0) + quantity;
+  
+    const availableStock = existing
+      ? Number(existing.stock || 0)
+      : Number(medicine.stock || 0);
+
+    if (newQuantity > availableStock) {
+      setError(`Only ${availableStock} units of ${medicine.name} are available.`);
+      return;
+    }
+
+    if (existing) {
+      setCart((previous) =>
+        previous.map((item) =>
+          Number(item.medicineId) === Number(medicine.id)
+            ? { ...item, quantity: newQuantity }
+            : item
+        )
+      );
+    } else {
+          setCart((previous) => [
+           ...previous,
+          {
+            medicineId: medicine.id,
+            name: medicine.name,
+            batchNumber: medicine.batchNumber || "—",
+            price: Number(medicine.price || 0),
+            quantity,
+            stock: Number(medicine.stock || 0),
+          },
+        ]);
+      }
+
+    setSelectedMedicine("");
+    setSelectedQuantity(1);
+    setError("");
+  };
+
+  const removeCartItem = (medicineId) => {
+    setCart((previous) =>
+      previous.filter(
+        (item) => Number(item.medicineId) !== Number(medicineId)
+      )
+    );
+  };
+
+  const cartTotal = cart.reduce(
+    (total, item) => total + item.price * item.quantity,
+    0
+  );
+
+  
+const createOrder = async (event) => {
+  event.preventDefault();
+
+  if (!selectedCustomer) {
+    setError("Please select a customer.");
+    return;
+  }
+
+  if (cart.length === 0) {
+    setError("Please add at least one medicine.");
+    return;
+  }
+
+  setOrderSaving(true);
+  setError("");
+
+  const payload = {
+    customer: {
+      id: Number(selectedCustomer),
+    },
+    shippingAddress: shippingAddress.trim(),
+    items: cart.map((item) => ({
+      medicineId: Number(item.medicineId),
+      quantity: Number(item.quantity),
+    })),
+  };
+
+  try {
+    if (editingOrderId) {
+      await axios.put(`${API}/orders/${editingOrderId}`, payload);
+    } else {
+      await axios.post(`${API}/orders`, payload);
+    }
+
+    setShowOrderForm(false);
+    setCart([]);
+    setSelectedCustomer("");
+    setShippingAddress("");
+    setEditingOrderId(null);
+
+    setSuccess(
+      editingOrderId
+        ? "Order updated successfully!"
+        : "Order placed successfully!"
+    );
+
+    await loadData();
+  } catch (err) {
+    console.error(err);
+    setError(
+      err.response?.data?.message ||
+      (editingOrderId
+        ? "Unable to update order. Please check medicine stock and customer."
+        : "Unable to place order. Please check medicine stock and customer.")
+    );
+  } finally {
+    setOrderSaving(false);
+  }
+};
+
+
+const editOrder = async (orderId) => {
+  try {
+    setError("");
+    setSuccess("");
+
+    const orderResponse = await axios.get(`${API}/orders/${orderId}`);
+    const itemsResponse = await axios.get(`${API}/orders/${orderId}/items`);
+
+    const order = orderResponse.data;
+    const items = itemsResponse.data;
+
+    setEditingOrderId(orderId);
+    setSelectedCustomer(String(order.customer?.id || ""));
+    setShippingAddress(order.shippingAddress || "");
+
+    const updatedCart = items.map((item) => {
+      const medicine = item.medicine;
+      const quantity = Number(item.quantity || 0);
+
+      return {
+        medicineId: medicine.id,
+        name: medicine.name,
+        batchNumber: medicine.batchNumber || "—",
+        price: Number(item.price || medicine.price || 0),
+        quantity,
+        stock: Number(medicine.stock || 0) + quantity,
+      };
+    });
+
+    setCart(updatedCart);
+    setShowOrderForm(true);
+  } catch (err) {
+    console.error(err);
+    setError("Unable to load order details for editing.");
+  }
+};
+
+
+  const updateOrderStatus = async (id, status) => {
+    try {
+      await axios.put(`${API}/orders/${id}/status`, { status });
+      setSuccess("Order status updated successfully.");
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setError("Unable to update order status.");
+    }
+  };
+
+  const deleteOrder = async (id) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this order? Medicine stock will be restored."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await axios.delete(`${API}/orders/${id}`);
+      setSuccess("Order deleted successfully.");
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setError("Unable to delete order.");
+    }
   };
 
   const getCategoryName = (medicine) =>
     medicine.category?.categoryName ||
     medicine.category?.name ||
     "Uncategorized";
+
+  const pageTitles = {
+    dashboard: "Dashboard",
+    medicines: "Medicines",
+    customers: "Customers",
+    orders: "Orders",
+    categories: "Categories",
+    inventory: "Inventory",
+  };
 
   const renderMedicineTable = (items) => (
     <div className="table-wrapper">
@@ -247,6 +685,7 @@ function App() {
             <th>Medicine</th>
             <th>Category</th>
             <th>Manufacturer</th>
+            <th>Batch Number</th>
             <th>Price</th>
             <th>Stock</th>
             <th>Expiry Date</th>
@@ -254,11 +693,21 @@ function App() {
             <th>Actions</th>
           </tr>
         </thead>
-
         <tbody>
           {items.map((medicine) => {
-            const isLowStock =
-              Number(medicine.stock) <= LOW_STOCK_LIMIT;
+            const stockStatus = getStockStatus(medicine);
+            const expiryStatus = getExpiryStatus(medicine.expiryDate);
+
+            const status =
+              expiryStatus === "Expired"
+                ? "Expired"
+                : stockStatus === "Out of Stock"
+                ? "Out of Stock"
+                : stockStatus === "Low Stock"
+                ? "Low Stock"
+                : expiryStatus === "Expiring Soon"
+                ? "Expiring Soon"
+                : "Available";
 
             return (
               <tr key={medicine.id}>
@@ -273,53 +722,59 @@ function App() {
                     </div>
                   </div>
                 </td>
-
                 <td>{getCategoryName(medicine)}</td>
                 <td>{medicine.manufacturer || "—"}</td>
-                <td>₹{Number(medicine.price || 0).toFixed(2)}</td>
                 <td>
-                  <strong>{medicine.stock}</strong>
+                  {medicine.batchNumber ? (
+                    <span className="batch-number">
+                      {medicine.batchNumber}
+                      </span>
+                    ) : (
+                    "—"
+                  )}
                 </td>
+                <td>₹{Number(medicine.price || 0).toFixed(2)}</td>
+                <td><strong>{medicine.stock}</strong></td>
                 <td>{medicine.expiryDate || "—"}</td>
-
                 <td>
-                  <span
-                    className={`status-badge ${
-                      isLowStock ? "status-low" : "status-available"
-                    }`}
-                  >
-                    {isLowStock ? "Low Stock" : "Available"}
+                  <span className={`status-badge ${
+                    status === "Available"
+                      ? "status-available"
+                      : status === "Expiring Soon"
+                      ? "status-warning"
+                      : "status-low"
+                  }`}>
+                    {status}
                   </span>
                 </td>
-
+                              
                 <td>
-                  <div className="table-actions">
-                    <button
-                      type="button"
-                      className="icon-button edit-button"
-                      title="Edit medicine"
-                      onClick={() => editMedicine(medicine)}
-                    >
-                      <Edit size={16} />
-                    </button>
+                  <button
+                    type="button"
+                    className="icon-button edit-button"
+                    title="Edit medicine"
+                    onClick={() => editMedicine(medicine)}
+                  >
+                    <Edit size={16} />
+                  </button>
 
-                    <button
-                      type="button"
-                      className="icon-button delete-button"
-                      title="Delete medicine"
-                      onClick={() => deleteMedicine(medicine.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="icon-button delete-button"
+                    title="Delete medicine"
+                    onClick={() => deleteMedicine(medicine.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </td>
+
               </tr>
             );
           })}
 
           {items.length === 0 && (
             <tr>
-              <td colSpan="8" className="empty-state">
+              <td colSpan="9" className="empty-state">
                 No medicines found.
               </td>
             </tr>
@@ -342,9 +797,7 @@ function App() {
 
       <aside className={`sidebar ${mobileMenuOpen ? "sidebar-open" : ""}`}>
         <div className="brand">
-          <div className="brand-icon">
-            <Pill size={25} />
-          </div>
+          <div className="brand-icon"><Pill size={25} /></div>
           <div>
             <h2>PharmaCare</h2>
             <span>Management System</span>
@@ -361,55 +814,28 @@ function App() {
         <div className="sidebar-section">
           <p className="sidebar-label">MAIN MENU</p>
 
-          <button
-            type="button"
-            className={`nav-link ${
-              activePage === "dashboard" ? "active" : ""
-            }`}
-            onClick={() => navigate("dashboard")}
-          >
-            <LayoutDashboard size={19} />
-            <span>Dashboard</span>
-          </button>
-
-          <button
-            type="button"
-            className={`nav-link ${
-              activePage === "medicines" ? "active" : ""
-            }`}
-            onClick={() => navigate("medicines")}
-          >
-            <Pill size={19} />
-            <span>Medicines</span>
-          </button>
-
-          <button
-            type="button"
-            className={`nav-link ${
-              activePage === "categories" ? "active" : ""
-            }`}
-            onClick={() => navigate("categories")}
-          >
-            <Tags size={19} />
-            <span>Categories</span>
-          </button>
-
-          <button
-            type="button"
-            className={`nav-link ${
-              activePage === "inventory" ? "active" : ""
-            }`}
-            onClick={() => navigate("inventory")}
-          >
-            <Package size={19} />
-            <span>Inventory</span>
-          </button>
+          {[
+            ["dashboard", LayoutDashboard, "Dashboard"],
+            ["medicines", Pill, "Medicines"],
+            ["customers", Users, "Customers"],
+            ["orders", ShoppingCart, "Orders"],
+            ["categories", Tags, "Categories"],
+            ["inventory", Package, "Inventory"],
+          ].map(([page, Icon, label]) => (
+            <button
+              key={page}
+              type="button"
+              className={`nav-link ${activePage === page ? "active" : ""}`}
+              onClick={() => navigate(page)}
+            >
+              <Icon size={19} />
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
 
         <div className="sidebar-bottom">
-          <div className="sidebar-help-icon">
-            <CheckCircle size={20} />
-          </div>
+          <div className="sidebar-help-icon"><CheckCircle size={20} /></div>
           <div>
             <strong>System Status</strong>
             <span>Pharmacy dashboard</span>
@@ -427,7 +853,6 @@ function App() {
             >
               <Menu size={22} />
             </button>
-
             <div>
               <p className="breadcrumb">PharmaCare / {pageTitles[activePage]}</p>
               <h1>{pageTitles[activePage]}</h1>
@@ -449,9 +874,15 @@ function App() {
           <div className="error-message">
             <AlertTriangle size={18} />
             <span>{error}</span>
-            <button type="button" onClick={() => setError("")}>
-              <X size={17} />
-            </button>
+            <button type="button" onClick={() => setError("")}><X size={17} /></button>
+          </div>
+        )}
+
+        {success && (
+          <div className="success-message">
+            <CheckCircle size={18} />
+            <span>{success}</span>
+            <button type="button" onClick={() => setSuccess("")}><X size={17} /></button>
           </div>
         )}
 
@@ -468,10 +899,7 @@ function App() {
                   <div className="welcome-content">
                     <span className="welcome-tag">PHARMACY OVERVIEW</span>
                     <h2>Welcome to PharmaCare</h2>
-                    <p>
-                      Manage your medicines, categories and stock from one
-                      simple dashboard.
-                    </p>
+                    <p>Manage medicines, stock and categories from one simple dashboard.</p>
                     <button
                       type="button"
                       className="welcome-button"
@@ -486,49 +914,17 @@ function App() {
                 </section>
 
                 <section className="stats-grid">
-                  <div className="stat-card">
-                    <div className="stat-top">
-                      <div className="stat-icon green-icon">
-                        <Pill size={22} />
-                      </div>
-                      <span className="stat-caption">All records</span>
-                    </div>
-                    <p>Total Medicines</p>
-                    <h3>{totalMedicines}</h3>
-                  </div>
+                  <StatCard icon={<Pill size={22} />} color="green-icon" label="Total Medicines" value={totalMedicines} />
+                  <StatCard icon={<Tags size={22} />} color="purple-icon" label="Total Categories" value={totalCategories} />
+                  <StatCard icon={<AlertTriangle size={22} />} color="orange-icon" label="Low Stock Items" value={lowStockMedicines.length} />
+                  <StatCard icon={<IndianRupee size={22} />} color="blue-icon" label="Inventory Value" value={`₹${inventoryValue.toLocaleString("en-IN")}`} />
+                </section>
 
-                  <div className="stat-card">
-                    <div className="stat-top">
-                      <div className="stat-icon purple-icon">
-                        <Tags size={22} />
-                      </div>
-                      <span className="stat-caption">Organized groups</span>
-                    </div>
-                    <p>Total Categories</p>
-                    <h3>{totalCategories}</h3>
-                  </div>
-
-                  <div className="stat-card">
-                    <div className="stat-top">
-                      <div className="stat-icon orange-icon">
-                        <AlertTriangle size={22} />
-                      </div>
-                      <span className="stat-caption">Needs attention</span>
-                    </div>
-                    <p>Low Stock Items</p>
-                    <h3>{lowStockMedicines.length}</h3>
-                  </div>
-
-                  <div className="stat-card">
-                    <div className="stat-top">
-                      <div className="stat-icon blue-icon">
-                        <IndianRupee size={22} />
-                      </div>
-                      <span className="stat-caption">Stock value</span>
-                    </div>
-                    <p>Inventory Value</p>
-                    <h3>₹{inventoryValue.toLocaleString("en-IN")}</h3>
-                  </div>
+                <section className="stats-grid">
+                  <StatCard icon={<Package size={22} />} color="green-icon" label="Total Stock Units" value={totalStock} />
+                  <StatCard icon={<AlertTriangle size={22} />} color="orange-icon" label="Out of Stock" value={outOfStockMedicines.length} />
+                  <StatCard icon={<CalendarDays size={22} />} color="purple-icon" label="Expired Medicines" value={expiredMedicines.length} />
+                  <StatCard icon={<CalendarDays size={22} />} color="blue-icon" label="Expiring Within 30 Days" value={expiringSoonMedicines.length} />
                 </section>
 
                 <section className="content-card">
@@ -537,15 +933,8 @@ function App() {
                       <h2>Recent Medicines</h2>
                       <p>Your current medicine records</p>
                     </div>
-                    <button
-                      type="button"
-                      className="text-button"
-                      onClick={() => navigate("medicines")}
-                    >
-                      View all
-                    </button>
+                    <button type="button" className="text-button" onClick={() => navigate("medicines")}>View all</button>
                   </div>
-
                   {renderMedicineTable(medicines.slice(0, 5))}
                 </section>
               </>
@@ -558,12 +947,7 @@ function App() {
                     <h2>Medicine Management</h2>
                     <p>Add, update, search and delete medicines</p>
                   </div>
-
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={openAddForm}
-                  >
+                  <button type="button" className="primary-button" onClick={openAddForm}>
                     <Plus size={18} /> Add Medicine
                   </button>
                 </div>
@@ -572,19 +956,176 @@ function App() {
                   <div className="search-box">
                     <Search size={18} />
                     <input
-                      type="text"
                       placeholder="Search medicine, manufacturer or category..."
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                     />
                   </div>
-                  <span className="result-count">
-                    {filteredMedicines.length} medicines
-                  </span>
+                  <span className="result-count">{filteredMedicines.length} medicines</span>
                 </div>
-
                 {renderMedicineTable(filteredMedicines)}
               </section>
+            )}
+
+            {activePage === "customers" && (
+              <section className="content-card">
+                <div className="section-heading page-section-heading">
+                  <div>
+                    <h2>Customer Management</h2>
+                    <p>Add, update, search and delete customers</p>
+                  </div>
+                  <button type="button" className="primary-button" onClick={() => openCustomerForm()}>
+                    <UserPlus size={18} /> Add Customer
+                  </button>
+                </div>
+
+                <div className="toolbar">
+                  <div className="search-box">
+                    <Search size={18} />
+                    <input
+                      placeholder="Search by name, email, phone or address..."
+                      value={customerSearch}
+                      onChange={(event) => setCustomerSearch(event.target.value)}
+                    />
+                  </div>
+                  <span className="result-count">{filteredCustomers.length} customers</span>
+                </div>
+
+                <div className="table-wrapper">
+                  <table className="medicine-table">
+                    <thead>
+                      <tr>
+                        <th>Customer</th><th>Email</th><th>Phone</th><th>Address</th><th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCustomers.map((customer) => (
+                        <tr key={customer.id}>
+                          <td>
+                            <div className="medicine-name-cell">
+                              <div className="medicine-avatar"><Users size={18} /></div>
+                              <div><strong>{customer.fullName}</strong><small>ID: {customer.id}</small></div>
+                            </div>
+                          </td>
+                          <td>{customer.email ? <span className="customer-detail"><Mail size={15} /> {customer.email}</span> : "—"}</td>
+                          <td><span className="customer-detail"><Phone size={15} /> {customer.phone}</span></td>
+                          <td>{customer.address ? <span className="customer-detail"><MapPin size={15} /> {customer.address}</span> : "—"}</td>
+                          <td>
+                            <div className="table-actions">
+                              <button type="button" className="icon-button edit-button" title="Edit customer" onClick={() => openCustomerForm(customer)}><Edit size={16} /></button>
+                              <button type="button" className="icon-button delete-button" title="Delete customer" onClick={() => deleteCustomer(customer.id)}><Trash2 size={16} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredCustomers.length === 0 && (
+                        <tr><td colSpan="5" className="empty-state">No customers found.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {/* ORDERS PAGE */}
+            {activePage === "orders" && (
+              <>
+                <section className="stats-grid">
+                  <StatCard icon={<ShoppingCart size={22} />} color="blue-icon" label="Total Orders" value={orders.length} />
+                  <StatCard icon={<ClipboardList size={22} />} color="orange-icon" label="Pending Orders" value={orders.filter(o => o.status === "PENDING").length} />
+                  <StatCard icon={<CheckCircle size={22} />} color="green-icon" label="Completed Orders" value={orders.filter(o => o.status === "COMPLETED").length} />
+                  <StatCard icon={<IndianRupee size={22} />} color="purple-icon" label="Order Revenue" value={`₹${orders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0).toLocaleString("en-IN")}`} />
+                </section>
+
+                <section className="content-card">
+                  <div className="section-heading page-section-heading">
+                    <div>
+                      <h2>Order Management</h2>
+                      <p>Create orders and manage customer purchases</p>
+                    </div>
+                    <button type="button" className="primary-button" onClick={openOrderForm}>
+                      <Plus size={18} /> Create Order
+                    </button>
+                  </div>
+
+                  <div className="toolbar">
+                    <div className="search-box">
+                      <Search size={18} />
+                      <input
+                        placeholder="Search by order ID, customer or status..."
+                        value={orderSearch}
+                        onChange={(event) => setOrderSearch(event.target.value)}
+                      />
+                    </div>
+                    <span className="result-count">{filteredOrders.length} orders</span>
+                  </div>
+
+                  <div className="table-wrapper">
+                    <table className="medicine-table">
+                      <thead>
+                        <tr>
+                          <th>Order ID</th>
+                          <th>Customer</th>
+                          <th>Order Date</th>
+                          <th>Total Amount</th>
+                          <th>Status</th>
+                          <th>Shipping Address</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredOrders.map((order) => (
+                          <tr key={order.id}>
+                            <td><strong>#{order.id}</strong></td>
+                            <td>{order.customer?.fullName || "Customer"}</td>
+                            <td>{order.orderDate ? new Date(order.orderDate).toLocaleString("en-IN") : "—"}</td>
+                            <td><strong>₹{Number(order.totalAmount || 0).toFixed(2)}</strong></td>
+                            <td>
+                              
+                            <select
+                              className={`order-status-select status-${(order.status || "PENDING").toLowerCase()}`}
+                              value={order.status || "PENDING"}
+                              onChange={(event) => updateOrderStatus(order.id, event.target.value)}
+                            >
+                              <option value="PENDING">● Pending</option>
+                              <option value="PROCESSING">● Processing</option>
+                              <option value="COMPLETED">● Completed</option>
+                              <option value="CANCELLED">● Cancelled</option>
+                            </select>
+
+                            </td>
+                            <td>{order.shippingAddress || "—"}</td>
+                            
+<td>
+  <button
+    type="button"
+    className="icon-button edit-button"
+    title="Edit order"
+    onClick={() => editOrder(order.id)}
+  >
+    <Edit size={16} />
+  </button>
+
+  <button
+    type="button"
+    className="icon-button delete-button"
+    title="Delete order"
+    onClick={() => deleteOrder(order.id)}
+  >
+    <Trash2 size={16} />
+  </button>
+</td>
+
+                          </tr>
+                        ))}
+                        {filteredOrders.length === 0 && (
+                          <tr><td colSpan="7" className="empty-state">No orders found. Create your first order.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
             )}
 
             {activePage === "categories" && (
@@ -594,42 +1135,27 @@ function App() {
                     <h2>Medicine Categories</h2>
                     <p>All categories available in your pharmacy</p>
                   </div>
-                  <span className="category-count">
-                    {categories.length} Categories
-                  </span>
+                  <span className="category-count">{categories.length} Categories</span>
                 </div>
 
                 <div className="category-grid">
                   {categories.map((category) => {
-                    const medicineCount = medicines.filter(
-                      (medicine) =>
-                        Number(medicine.category?.id) === Number(category.id)
+                    const count = medicines.filter(
+                      (m) => Number(m.category?.id) === Number(category.id)
                     ).length;
 
                     return (
                       <div className="category-card" key={category.id}>
                         <div className="category-card-top">
-                          <div className="stat-icon green-icon">
-                            <Tags size={22} />
-                          </div>
-                          <span className="category-id">
-                            ID: {category.id}
-                          </span>
+                          <div className="stat-icon green-icon"><Tags size={22} /></div>
+                          <span className="category-id">ID: {category.id}</span>
                         </div>
                         <h3>{category.categoryName || category.name}</h3>
-                        <p>
-                          {medicineCount}{" "}
-                          {medicineCount === 1 ? "medicine" : "medicines"}
-                        </p>
+                        <p>{count} {count === 1 ? "medicine" : "medicines"}</p>
                       </div>
                     );
                   })}
-
-                  {categories.length === 0 && (
-                    <div className="empty-state">
-                      No categories available.
-                    </div>
-                  )}
+                  {categories.length === 0 && <div className="empty-state">No categories available.</div>}
                 </div>
               </section>
             )}
@@ -637,57 +1163,20 @@ function App() {
             {activePage === "inventory" && (
               <>
                 <section className="stats-grid inventory-stats">
-                  <div className="stat-card">
-                    <div className="stat-top">
-                      <div className="stat-icon green-icon">
-                        <Package size={22} />
-                      </div>
-                    </div>
-                    <p>Total Stock Units</p>
-                    <h3>
-                      {medicines.reduce(
-                        (sum, medicine) => sum + Number(medicine.stock || 0),
-                        0
-                      )}
-                    </h3>
-                  </div>
-
-                  <div className="stat-card">
-                    <div className="stat-top">
-                      <div className="stat-icon orange-icon">
-                        <AlertTriangle size={22} />
-                      </div>
-                    </div>
-                    <p>Low Stock Medicines</p>
-                    <h3>{lowStockMedicines.length}</h3>
-                  </div>
-
-                  <div className="stat-card">
-                    <div className="stat-top">
-                      <div className="stat-icon blue-icon">
-                        <ClipboardList size={22} />
-                      </div>
-                    </div>
-                    <p>Inventory Records</p>
-                    <h3>{totalMedicines}</h3>
-                  </div>
+                  <StatCard icon={<Package size={22} />} color="green-icon" label="Total Stock Units" value={totalStock} />
+                  <StatCard icon={<AlertTriangle size={22} />} color="orange-icon" label="Low Stock Medicines" value={lowStockMedicines.length} />
+                  <StatCard icon={<ClipboardList size={22} />} color="blue-icon" label="Inventory Records" value={totalMedicines} />
+                  <StatCard icon={<CalendarDays size={22} />} color="purple-icon" label="Expired Medicines" value={expiredMedicines.length} />
                 </section>
 
                 <section className="content-card">
                   <div className="section-heading">
-                    <div>
-                      <h2>Stock Inventory</h2>
-                      <p>Monitor available stock and low-stock medicines</p>
-                    </div>
+                    <div><h2>Stock Inventory</h2><p>Monitor available stock and expiry dates</p></div>
                   </div>
-
                   <div className="inventory-alert">
                     <AlertTriangle size={19} />
-                    <span>
-                      Low stock means {LOW_STOCK_LIMIT} or fewer units.
-                    </span>
+                    <span>Low stock: {LOW_STOCK_LIMIT} or fewer units. Expiring soon: within 30 days.</span>
                   </div>
-
                   {renderMedicineTable(medicines)}
                 </section>
               </>
@@ -695,23 +1184,16 @@ function App() {
           </>
         )}
       </main>
-
+  
+      {/* MEDICINE FORM */}
       {showForm && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setShowForm(false);
-            }
-          }}
-        >
+        <div className="modal-backdrop">
           <div className="medicine-modal">
             <div className="modal-heading">
               <div>
                 <h2>{editingId ? "Edit Medicine" : "Add New Medicine"}</h2>
                 <p>Enter the medicine information below</p>
               </div>
-
               <button
                 type="button"
                 className="modal-close"
@@ -725,34 +1207,29 @@ function App() {
               <div className="form-grid">
                 <label>
                   Medicine Name *
-                  <input
-                    name="name"
-                    value={form.name}
-                    onChange={handleFormChange}
-                    placeholder="e.g. Paracetamol 500mg"
-                    required
-                  />
+                  <input name="name" value={form.name} onChange={handleFormChange} required />
                 </label>
 
                 <label>
                   Manufacturer *
-                  <input
-                    name="manufacturer"
-                    value={form.manufacturer}
-                    onChange={handleFormChange}
-                    placeholder="Manufacturer name"
-                    required
-                  />
+                  <input name="manufacturer" value={form.manufacturer} onChange={handleFormChange} required />
                 </label>
 
+                <label>Batch Number *
+                <input
+                  type="text"
+                  id="batchNumber"
+                  name="batchNumber"
+                  value={form.batchNumber}
+                  onChange={handleFormChange}
+                  placeholder="Enter batch number"
+                  required
+                />
+                </label>
+                
                 <label>
                   Category *
-                  <select
-                    name="categoryId"
-                    value={form.categoryId}
-                    onChange={handleFormChange}
-                    required
-                  >
+                  <select name="categoryId" value={form.categoryId} onChange={handleFormChange} required>
                     <option value="">Select category</option>
                     {categories.map((category) => (
                       <option key={category.id} value={category.id}>
@@ -764,52 +1241,22 @@ function App() {
 
                 <label>
                   Price (₹) *
-                  <input
-                    name="price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.price}
-                    onChange={handleFormChange}
-                    placeholder="Enter price"
-                    required
-                  />
+                  <input name="price" type="number" min="0" step="0.01" value={form.price} onChange={handleFormChange} required />
                 </label>
 
                 <label>
                   Stock Quantity *
-                  <input
-                    name="stock"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.stock}
-                    onChange={handleFormChange}
-                    placeholder="Enter stock"
-                    required
-                  />
+                  <input name="stock" type="number" min="0" value={form.stock} onChange={handleFormChange} required />
                 </label>
 
                 <label>
                   Expiry Date *
-                  <input
-                    name="expiryDate"
-                    type="date"
-                    value={form.expiryDate}
-                    onChange={handleFormChange}
-                    required
-                  />
+                  <input name="expiryDate" type="date" value={form.expiryDate} onChange={handleFormChange} required />
                 </label>
 
                 <label className="full-width">
                   Description
-                  <textarea
-                    name="description"
-                    rows="3"
-                    value={form.description}
-                    onChange={handleFormChange}
-                    placeholder="Enter medicine description"
-                  />
+                  <textarea name="description" rows="3" value={form.description} onChange={handleFormChange} />
                 </label>
 
                 <label className="checkbox-label full-width">
@@ -824,10 +1271,224 @@ function App() {
               </div>
 
               <div className="modal-actions">
+                <button type="button" className="cancel-button" onClick={() => setShowForm(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="primary-button" disabled={saving}>
+                  {saving ? "Saving..." : editingId ? "Update Medicine" : "Save Medicine"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOMER FORM */}
+      {showCustomerForm && (
+        <div className="modal-backdrop">
+          <div className="medicine-modal">
+            <div className="modal-heading">
+              <div>
+                <h2>{editingCustomerId !== null ? "Edit Customer" : "Add New Customer"}</h2>
+                <p>Enter customer information below</p>
+              </div>
+              <button type="button" className="modal-close" onClick={() => setShowCustomerForm(false)}>
+                <X size={21} />
+              </button>
+            </div>
+
+            <form onSubmit={saveCustomer}>
+              <div className="form-grid">
+                <label className="full-width">
+                  Full Name *
+                  <input name="fullName" value={customerForm.fullName} onChange={handleCustomerFormChange} required />
+                </label>
+
+                <label>
+                  Email Address
+                  <input name="email" type="email" value={customerForm.email} onChange={handleCustomerFormChange} />
+                </label>
+
+                <label>
+                  Phone Number *
+                  <input name="phone" value={customerForm.phone} onChange={handleCustomerFormChange} required />
+                </label>
+
+                <label className="full-width">
+                  Address
+                  <textarea name="address" rows="3" value={customerForm.address} onChange={handleCustomerFormChange} />
+                </label>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="cancel-button" onClick={() => setShowCustomerForm(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="primary-button" disabled={customerSaving}>
+                  {customerSaving ? "Saving..." : editingCustomerId !== null ? "Update Customer" : "Save Customer"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE ORDER FORM */}
+      {showOrderForm && (
+        <div className="modal-backdrop">
+          <div className="medicine-modal order-modal">
+            <div className="modal-heading">           
+              <div>
+                <h2>{editingOrderId ? "Edit Order" : "Create New Order"}</h2>
+                <p>
+                {editingOrderId
+                  ? "Update customer, medicines and order details"
+                  : "Select a customer and add medicines"}
+                </p>
+              </div>
+
+              <button type="button" className="modal-close" onClick={() => setShowOrderForm(false)}>
+                <X size={21} />
+              </button>
+            </div>
+
+            <form onSubmit={createOrder}>
+              <div className="form-grid">
+                <label className="full-width">
+                  Select Customer *
+                  <select
+                    value={selectedCustomer}
+                    onChange={(event) => {
+                      const id = event.target.value;
+                      setSelectedCustomer(id);
+                      const customer = customers.find(
+                        (item) => Number(item.id) === Number(id)
+                      );
+                      setShippingAddress(customer?.address || "");
+                    }}
+                    required
+                  >
+                    <option value="">Choose customer</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.fullName} - {customer.phone}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="full-width">
+                  Shipping Address
+                  <textarea
+                    rows="2"
+                    value={shippingAddress}
+                    onChange={(event) => setShippingAddress(event.target.value)}
+                    placeholder="Enter delivery address"
+                  />
+                </label>
+
+                <label>
+                  Select Medicine
+                  <select
+                    value={selectedMedicine}
+                    onChange={(event) => setSelectedMedicine(event.target.value)}
+                  >
+                    <option value="">Choose medicine</option>
+                    {medicines
+                      .filter((medicine) =>
+                        Number(medicine.stock) > 0 &&
+                        getExpiryStatus(medicine.expiryDate) !== "Expired"
+                      )
+                      .map((medicine) => (
+                        <option key={medicine.id} value={medicine.id}>
+                          {medicine.name} — ₹{medicine.price} (Stock: {medicine.stock})
+                        </option>
+                      ))}
+                  </select>
+                </label>
+
+                <label>
+                  Quantity
+                  <input
+                    type="number"
+                    min="1"
+                    value={selectedQuantity}
+                    onChange={(event) => setSelectedQuantity(event.target.value)}
+                  />
+                </label>
+              </div>
+
+              <button type="button" className="primary-button" onClick={addToCart}>
+                <Plus size={17} /> Add to Order
+              </button>
+
+              <div className="order-cart">
+                <h3>Order Items</h3>
+
+                <div className="table-wrapper">
+                  <table className="medicine-table">
+                    <thead>
+                      <tr>
+                        <th>Medicine</th>
+                        <th>Batch Number</th>
+                        <th>Price</th>
+                        <th>Quantity</th>
+                        <th>Subtotal</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cart.map((item) => (
+                        <tr key={item.medicineId}>
+                          <td>{item.name}</td>
+                          <td>
+                            <span className="batch-number">
+                              {item.batchNumber || "—"}
+                            </span>
+                          </td>
+                          <td>₹{item.price.toFixed(2)}</td>
+                          <td>{item.quantity}</td>
+                          <td>₹{(item.price * item.quantity).toFixed(2)}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="icon-button delete-button"
+                              onClick={() => removeCartItem(item.medicineId)}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {cart.length === 0 && (
+                        <tr>
+                          <td colSpan="6" className="empty-state">
+                            No medicines added yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="order-total">
+                  <span>Total Amount</span>
+                  <strong>₹{cartTotal.toFixed(2)}</strong>
+                </div>
+              </div>
+              
+              <div className="modal-actions">
                 <button
                   type="button"
                   className="cancel-button"
-                  onClick={() => setShowForm(false)}
+                  onClick={() => {
+                    setShowOrderForm(false);
+                    setEditingOrderId(null);
+                    setCart([]);
+                    setSelectedCustomer("");
+                    setShippingAddress("");
+                  }}
                 >
                   Cancel
                 </button>
@@ -835,27 +1496,37 @@ function App() {
                 <button
                   type="submit"
                   className="primary-button"
-                  disabled={saving || categories.length === 0}
+                  disabled={orderSaving || cart.length === 0 || !selectedCustomer}
                 >
-                  {saving
-                    ? "Saving..."
-                    : editingId
-                    ? "Update Medicine"
-                    : "Save Medicine"}
+                  {orderSaving
+                    ? editingOrderId ? "Updating Order..." : "Placing Order..."
+                    : editingOrderId ? "Update Order" : "Place Order"}
                 </button>
               </div>
 
-              {categories.length === 0 && (
-                <p className="form-note">
-                  Add a category before adding a medicine.
-                </p>
+              {customers.length === 0 && (
+                <p className="form-note">Add a customer before creating an order.</p>
               )}
             </form>
           </div>
         </div>
       )}
+        </div>
+  );
+}
+  
+function StatCard({ icon, color, label, value }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-top">
+        <div className={`stat-icon ${color}`}>{icon}</div>
+        <span className="stat-caption">Overview</span>
+      </div>
+      <p>{label}</p>
+      <h3>{value}</h3>
     </div>
   );
 }
+
 
 export default App;

@@ -9,6 +9,7 @@ public class MedicineRequest {
     private String name;
     private String description;
     private String manufacturer;
+    private String batchNumber;
     private BigDecimal price;
     private Integer stock;
     private LocalDate expiryDate;
@@ -37,6 +38,14 @@ public class MedicineRequest {
 
     public void setManufacturer(String manufacturer) {
         this.manufacturer = manufacturer;
+    }
+
+    public String getBatchNumber() {
+        return batchNumber;
+    }
+
+    public void setBatchNumber(String batchNumber) {
+        this.batchNumber = batchNumber;
     }
 
     public BigDecimal getPrice() {

@@ -21,6 +21,9 @@ public class Medicine {
 
     private String manufacturer;
 
+    @Column(name = "batch_number", length = 100)
+    private String batchNumber;
+
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
@@ -69,6 +72,14 @@ public class Medicine {
 
     public void setManufacturer(String manufacturer) {
         this.manufacturer = manufacturer;
+    }
+
+    public String getBatchNumber() {
+        return batchNumber;
+    }
+
+    public void setBatchNumber(String batchNumber) {
+        this.batchNumber = batchNumber;
     }
 
     public BigDecimal getPrice() {
