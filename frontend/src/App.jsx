@@ -83,6 +83,18 @@ function App() {
   const [categories, setCategories] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [customerOrders, setCustomerOrders] = useState([]);
+const [showCustomerOrderHistory, setShowCustomerOrderHistory] = useState(false);
+const [selectedHistoryCustomer, setSelectedHistoryCustomer] = useState(null);
+
+// PRESCRIPTION MANAGEMENT STATE
+const [prescriptions, setPrescriptions] = useState([]);
+const [prescriptionSearch, setPrescriptionSearch] = useState("");
+const [prescriptionStatusFilter, setPrescriptionStatusFilter] = useState("ALL");
+const [prescriptionFile, setPrescriptionFile] = useState(null);
+const [prescriptionCustomer, setPrescriptionCustomer] = useState("");
+const [prescriptionMedicine, setPrescriptionMedicine] = useState("");
+const [prescriptionSaving, setPrescriptionSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [customerSearch, setCustomerSearch] = useState("");
@@ -110,40 +122,47 @@ function App() {
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [orderSaving, setOrderSaving] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
+  const [orderStatusFilter, setOrderStatusFilter] = useState("ALL");
   const [selectedCustomer, setSelectedCustomer] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
   const [cart, setCart] = useState([]);
   const [selectedMedicine, setSelectedMedicine] = useState("");
   const [selectedQuantity, setSelectedQuantity] = useState(1);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  
+const loadData = useCallback(async () => {
+  setLoading(true);
+  setError("");
 
-    try {
-      const [
-        medicineResponse,
-        categoryResponse,
-        customerResponse,
-        orderResponse,
-      ] = await Promise.all([
-        axios.get(`${API}/medicines`),
-        axios.get(`${API}/categories`),
-        axios.get(`${API}/customers`),
-        axios.get(`${API}/orders`),
-      ]);
+  try {
+    const [
+      medicineResponse,
+      categoryResponse,
+      customerResponse,
+      orderResponse,
+      prescriptionResponse,
+    ] = await Promise.all([
+      axios.get(`${API}/medicines`),
+      axios.get(`${API}/categories`),
+      axios.get(`${API}/customers`),
+      axios.get(`${API}/orders`),
+      axios.get(`${API}/prescriptions`),
+    ]);
 
-      setMedicines(getArray(medicineResponse.data));
-      setCategories(getArray(categoryResponse.data));
-      setCustomers(getArray(customerResponse.data));
-      setOrders(getArray(orderResponse.data));
-    } catch (err) {
-      console.error(err);
-      setError("Unable to load data. Please check your backend connection.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    setMedicines(getArray(medicineResponse.data));
+    setCategories(getArray(categoryResponse.data));
+    setCustomers(getArray(customerResponse.data));
+    setOrders(getArray(orderResponse.data));
+    setPrescriptions(getArray(prescriptionResponse.data));
+
+  } catch (err) {
+    console.error(err);
+    setError("Unable to load data. Please check your backend connection.");
+  } finally {
+    setLoading(false);
+  }
+}, []);
+
 
   useEffect(() => {
   const fetchData = async () => {
@@ -152,6 +171,8 @@ function App() {
 
   fetchData();
 }, [loadData]);
+
+
   const totalMedicines = medicines.length;
   const totalCategories = categories.length;
 
@@ -219,11 +240,11 @@ function App() {
   }, [customers, customerSearch]);
 
   const filteredOrders = useMemo(() => {
-    const term = orderSearch.trim().toLowerCase();
+  const term = orderSearch.trim().toLowerCase();
 
-    if (!term) return orders;
-
-    return orders.filter((order) =>
+  return orders.filter((order) => {
+    const matchesSearch =
+      !term ||
       [
         order.id,
         order.customer?.fullName,
@@ -231,9 +252,17 @@ function App() {
         order.shippingAddress,
       ]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term))
-    );
-  }, [orders, orderSearch]);
+        .some((value) =>
+          String(value).toLowerCase().includes(term)
+        );
+
+    const matchesStatus =
+      orderStatusFilter === "ALL" ||
+      order.status === orderStatusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+}, [orders, orderSearch, orderStatusFilter]);
 
   const navigate = (page) => {
     setActivePage(page);
@@ -646,6 +675,24 @@ const editOrder = async (orderId) => {
     }
   };
 
+  const loadCustomerOrderHistory = async (customerId) => {
+  try {
+    const response = await axios.get(
+      `${API}/orders/customer/${customerId}`
+    );
+
+    const data = response.data;
+    setCustomerOrders(Array.isArray(data) ? data : []);
+
+    setSelectedHistoryCustomer(customerId);
+    setShowCustomerOrderHistory(true);
+    setError("");
+  } catch (err) {
+    console.error("Unable to load customer orders:", err);
+    setError("Unable to load customer order history.");
+  }
+};
+
   const deleteOrder = async (id) => {
     const confirmed = window.confirm(
       "Are you sure you want to delete this order? Medicine stock will be restored."
@@ -663,6 +710,77 @@ const editOrder = async (orderId) => {
     }
   };
 
+  const uploadPrescription = async (event) => {
+    event.preventDefault();
+
+    if (!prescriptionCustomer) {
+      setError("Please select a customer.");
+      return;
+    }
+
+    if (!prescriptionFile) {
+      setError("Please select a prescription file.");
+      return;
+    }
+
+    if (prescriptionFile.size > 5 * 1024 * 1024) {
+      setError("Prescription file must be 5 MB or smaller.");
+      return;
+    }
+
+    setPrescriptionSaving(true);
+    setError("");
+    setSuccess("");
+
+    const formData = new FormData();
+    formData.append("customerId", prescriptionCustomer);
+    if (prescriptionMedicine) {
+      formData.append("medicineId", prescriptionMedicine);
+    }
+    formData.append("file", prescriptionFile);
+
+    try {
+      await axios.post(`${API}/prescriptions/upload`, formData);
+      setSuccess("Prescription uploaded successfully.");
+      setPrescriptionFile(null);
+      setPrescriptionCustomer("");
+      setPrescriptionMedicine("");
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setError(
+        err.response?.data?.message ||
+        "Unable to upload prescription. Please check the backend."
+      );
+    } finally {
+      setPrescriptionSaving(false);
+    }
+  };
+
+  const reviewPrescription = async (id, status) => {
+    const remarks = window.prompt(
+      `Enter remarks for ${status.toLowerCase()}:`,
+      ""
+    );
+
+    if (remarks === null) return;
+
+    try {
+      await axios.put(`${API}/prescriptions/${id}/review`, {
+        status,
+        remarks,
+      });
+      setSuccess(`Prescription ${status.toLowerCase()} successfully.`);
+      setError("");
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      setError(
+        err.response?.data?.message || "Unable to review prescription."
+      );
+    }
+  };
+
   const getCategoryName = (medicine) =>
     medicine.category?.categoryName ||
     medicine.category?.name ||
@@ -673,6 +791,7 @@ const editOrder = async (orderId) => {
     medicines: "Medicines",
     customers: "Customers",
     orders: "Orders",
+    prescriptions: "Prescriptions",
     categories: "Categories",
     inventory: "Inventory",
   };
@@ -819,6 +938,7 @@ const editOrder = async (orderId) => {
             ["medicines", Pill, "Medicines"],
             ["customers", Users, "Customers"],
             ["orders", ShoppingCart, "Orders"],
+            ["prescriptions", ClipboardList, "Prescriptions"],
             ["categories", Tags, "Categories"],
             ["inventory", Package, "Inventory"],
           ].map(([page, Icon, label]) => (
@@ -961,6 +1081,16 @@ const editOrder = async (orderId) => {
                       onChange={(event) => setSearch(event.target.value)}
                     />
                   </div>
+                   <select
+    value={orderStatusFilter}
+    onChange={(event) => setOrderStatusFilter(event.target.value)}
+  >
+    <option value="ALL">All Orders</option>
+    <option value="PENDING">Pending</option>
+    <option value="PROCESSING">Processing</option>
+    <option value="COMPLETED">Completed</option>
+    <option value="CANCELLED">Cancelled</option>
+  </select>
                   <span className="result-count">{filteredMedicines.length} medicines</span>
                 </div>
                 {renderMedicineTable(filteredMedicines)}
@@ -1011,10 +1141,39 @@ const editOrder = async (orderId) => {
                           <td><span className="customer-detail"><Phone size={15} /> {customer.phone}</span></td>
                           <td>{customer.address ? <span className="customer-detail"><MapPin size={15} /> {customer.address}</span> : "—"}</td>
                           <td>
-                            <div className="table-actions">
-                              <button type="button" className="icon-button edit-button" title="Edit customer" onClick={() => openCustomerForm(customer)}><Edit size={16} /></button>
-                              <button type="button" className="icon-button delete-button" title="Delete customer" onClick={() => deleteCustomer(customer.id)}><Trash2 size={16} /></button>
-                            </div>
+                             
+<div className="table-actions">
+  <button
+    type="button"
+    className="secondary-button"
+    title="View customer orders"
+    onClick={() => {
+      setActivePage("orders");
+      loadCustomerOrderHistory(customer.id);
+    }}
+  >
+    View Orders
+  </button>
+
+  <button
+    type="button"
+    className="icon-button edit-button"
+    title="Edit customer"
+    onClick={() => openCustomerForm(customer)}
+  >
+    <Edit size={16} />
+  </button>
+
+  <button
+    type="button"
+    className="icon-button delete-button"
+    title="Delete customer"
+    onClick={() => deleteCustomer(customer.id)}
+  >
+    <Trash2 size={16} />
+  </button>
+</div>
+
                           </td>
                         </tr>
                       ))}
@@ -1095,27 +1254,25 @@ const editOrder = async (orderId) => {
 
                             </td>
                             <td>{order.shippingAddress || "—"}</td>
-                            
-<td>
-  <button
-    type="button"
-    className="icon-button edit-button"
-    title="Edit order"
-    onClick={() => editOrder(order.id)}
-  >
-    <Edit size={16} />
-  </button>
+                            <td>
+                              <button
+                                type="button"
+                                className="icon-button edit-button"
+                                title="Edit order"
+                                onClick={() => editOrder(order.id)}
+                              >
+                                <Edit size={16} />
+                              </button>
 
-  <button
-    type="button"
-    className="icon-button delete-button"
-    title="Delete order"
-    onClick={() => deleteOrder(order.id)}
-  >
-    <Trash2 size={16} />
-  </button>
-</td>
-
+                              <button
+                                type="button"
+                                className="icon-button delete-button"
+                                title="Delete order"
+                                onClick={() => deleteOrder(order.id)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                              </td>
                           </tr>
                         ))}
                         {filteredOrders.length === 0 && (
@@ -1124,9 +1281,354 @@ const editOrder = async (orderId) => {
                       </tbody>
                     </table>
                   </div>
+               
+                </section>
+
+                <button
+  type="button"
+  className="clear-filter-button"
+  onClick={() => {
+    setOrderSearch("");
+    setOrderStatusFilter("ALL");
+  }}
+>
+  Clear Filters
+</button>
+
+                {showCustomerOrderHistory && (
+                  <section className="content-card">
+                    <div className="section-heading">
+                      <div>
+                        <h2>Customer Order History</h2>
+                        <p>Customer ID: {selectedHistoryCustomer}</p>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="close-history-button"
+                        onClick={() => setShowCustomerOrderHistory(false)}
+                      >
+                        Close History
+                      </button>
+                    </div>
+
+                    {customerOrders.length === 0 ? (
+                      <p className="empty-state">
+                        No orders found for this customer.
+                      </p>
+                    ) : (
+                      <div className="table-wrapper">
+                        <table className="medicine-table">
+                          <thead>
+                            <tr>
+                              <th>Order ID</th>
+                              <th>Order Date</th>
+                              <th>Total Amount</th>
+                              <th>Status</th>
+                              <th>Shipping Address</th>
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {customerOrders.map((order) => (
+                              <tr key={order.id}>
+                                <td>#{order.id}</td>
+                                <td>
+                                  {order.orderDate
+                                    ? new Date(order.orderDate).toLocaleString("en-IN")
+                                    : "—"}
+                                </td>
+                                <td>
+                                  ₹{Number(order.totalAmount || 0).toFixed(2)}
+                                </td>
+                                <td>
+  <span className={`order-status-badge ${String(order.status || "").toLowerCase()}`}>
+    {order.status}
+  </span>
+</td>
+                                <td>{order.shippingAddress || "—"}</td>
+                              </tr>
+                            ))}
+                            
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                )}
+              </>
+            )}
+
+
+            {activePage === "prescriptions" && (
+              <>
+                <section className="stats-grid">
+                  <StatCard
+                    icon={<ClipboardList size={22} />}
+                    color="blue-icon"
+                    label="Total Prescriptions"
+                    value={prescriptions.length}
+                  />
+
+                  <StatCard
+                    icon={<AlertTriangle size={22} />}
+                    color="orange-icon"
+                    label="Pending Review"
+                    value={prescriptions.filter(p => p.status === "PENDING").length}
+                  />
+
+                  <StatCard
+                    icon={<CheckCircle size={22} />}
+                    color="green-icon"
+                    label="Approved"
+                    value={prescriptions.filter(p => p.status === "APPROVED").length}
+                  />
+
+                  <StatCard
+                    icon={<X size={22} />}
+                    color="purple-icon"
+                    label="Rejected"
+                    value={prescriptions.filter(p => p.status === "REJECTED").length}
+                  />
+                </section>
+
+                <section className="content-card">
+                  <div className="section-heading page-section-heading">
+                    <div>
+                      <h2>Prescription Management</h2>
+                      <p>Upload, view and review customer prescriptions</p>
+                    </div>
+                  </div>
+
+                  <form className="prescription-upload-form" onSubmit={uploadPrescription}>
+                    <div className="form-grid">
+                      <label>
+                        Select Customer *
+                        <select
+                          value={prescriptionCustomer}
+                          onChange={(event) => setPrescriptionCustomer(event.target.value)}
+                          required
+                        >
+                          <option value="">Choose customer</option>
+                          {customers.map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.fullName} - {customer.phone}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label>
+                        Select Medicine (Optional)
+                        <select
+                          value={prescriptionMedicine}
+                          onChange={(event) => setPrescriptionMedicine(event.target.value)}
+                        >
+                          <option value="">Choose medicine</option>
+                          {medicines.map((medicine) => (
+                            <option key={medicine.id} value={medicine.id}>
+                              {medicine.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="full-width">
+                        Prescription File (PDF, JPG, PNG) *
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                          onChange={(event) => setPrescriptionFile(event.target.files?.[0] || null)}
+                          required
+                        />
+                        <small>Maximum file size: 5 MB</small>
+                      </label>
+                    </div>
+                    <div className="modal-actions">
+                      <button
+                        type="submit"
+                        className="primary-button"
+                        disabled={prescriptionSaving || customers.length === 0}
+                      >
+                        {prescriptionSaving ? "Uploading..." : "Upload Prescription"}
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="toolbar">
+                    <div className="search-box">
+                      <Search size={18} />
+                      <input
+                        placeholder="Search by customer or status..."
+                        value={prescriptionSearch}
+                        onChange={(event) => setPrescriptionSearch(event.target.value)}
+                      />
+                    </div>
+                    <select
+                      value={prescriptionStatusFilter}
+                      onChange={(event) => setPrescriptionStatusFilter(event.target.value)}
+                    >
+                      <option value="ALL">All Status</option>
+                      <option value="PENDING">Pending</option>
+                      <option value="APPROVED">Approved</option>
+                      <option value="REJECTED">Rejected</option>
+                    </select>
+
+                    <button
+  type="button"
+  className="secondary-button"
+  onClick={() => {
+    setPrescriptionSearch("");
+    setPrescriptionStatusFilter("ALL");
+  }}
+>
+  Clear Filters
+</button>
+                   <span className="result-count">
+  {
+    prescriptions.filter((p) => {
+      const matchesSearch = [
+        p.customer?.fullName,
+        p.status,
+        p.fileName,
+        p.medicine?.name,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value).toLowerCase().includes(
+            prescriptionSearch.toLowerCase()
+          )
+        );
+
+      const matchesStatus =
+        prescriptionStatusFilter === "ALL" ||
+        p.status === prescriptionStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    }).length
+  } prescriptions
+</span>
+                  </div>
+
+                  <div className="table-wrapper">
+                    <table className="medicine-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Customer</th>
+                          <th>Medicine</th>
+                          <th>File Name</th>
+                          <th>Upload Date</th>
+                          <th>Status</th>
+                          <th>Remarks</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {prescriptions
+                          .filter((p) => {
+  const matchesSearch = [
+    p.customer?.fullName,
+    p.status,
+    p.fileName,
+    p.medicine?.name,
+  ]
+    .filter(Boolean)
+    .some((value) =>
+      String(value).toLowerCase().includes(
+        prescriptionSearch.toLowerCase()
+      )
+    );
+
+  const matchesStatus =
+    prescriptionStatusFilter === "ALL" ||
+    p.status === prescriptionStatusFilter;
+
+  return matchesSearch && matchesStatus;
+})
+                          .map((prescription) => (
+                            <tr key={prescription.id}>
+                              <td>#{prescription.id}</td>
+                              <td>{prescription.customer?.fullName || "Customer"}</td>
+                              <td>{prescription.medicine?.name || "Not specified"}</td>
+                              <td>{prescription.fileName}</td>
+                              <td>
+                                {prescription.uploadedAt
+                                  ? new Date(prescription.uploadedAt).toLocaleString("en-IN")
+                                  : "—"}
+                              </td>
+                              <td>
+  <span className={`status-badge ${prescription.status.toLowerCase()}`}>
+    {prescription.status}
+  </span>
+</td>
+                              <td>{prescription.pharmacistRemarks || "—"}</td>
+                              
+                              <td>
+                                <div className="table-actions">
+                                    <button
+                                      type="button"
+                                      className="secondary-button"
+                                      onClick={() =>
+                                        window.open(
+                                          `${API}/prescriptions/${prescription.id}/file`,
+                                          "_blank",
+                                          "noopener,noreferrer"
+                                        )
+                                      }
+                                    >
+                                      View
+                                    </button>
+
+                                    {prescription.status === "PENDING" && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="secondary-button"
+                                          onClick={() =>
+                                            reviewPrescription(prescription.id, "APPROVED")
+                                          }
+                                        >
+                                          Approve
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          className="icon-button delete-button"
+                                          title="Reject prescription"
+                                          onClick={() =>
+                                            reviewPrescription(prescription.id, "REJECTED")
+                                          }
+                                        >
+                                          <X size={16} />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+
+                            </tr>
+                          ))}
+
+                        {prescriptions.filter((p) =>
+                          [p.customer?.fullName, p.status, p.fileName, p.medicine?.name]
+                            .filter(Boolean)
+                            .some((value) => String(value).toLowerCase().includes(prescriptionSearch.toLowerCase()))
+                        ).length === 0 && (
+                          <tr>
+                            <td colSpan="8" className="empty-state">
+                              {prescriptions.length === 0 ? "No prescriptions uploaded yet." : "No matching prescriptions found."}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </section>
               </>
             )}
+
 
             {activePage === "categories" && (
               <section className="content-card">
@@ -1183,6 +1685,9 @@ const editOrder = async (orderId) => {
             )}
           </>
         )}
+
+
+
       </main>
   
       {/* MEDICINE FORM */}

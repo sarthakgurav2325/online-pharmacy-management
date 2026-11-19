@@ -38,6 +38,14 @@ public class OrderService {
         return orderRepository.findAll();
     }
 
+    public List<Order> getCustomerOrders(Integer customerId) {
+    if (!customerRepository.existsById(customerId)) {
+        throw new RuntimeException("Customer not found");
+    }
+
+    return orderRepository.findByCustomerIdOrderByOrderDateDesc(customerId);
+}
+
     public Order getOrderById(Integer id) {
         return orderRepository.findById(id)
                 .orElseThrow(() ->
