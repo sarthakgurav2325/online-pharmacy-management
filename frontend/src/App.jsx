@@ -1,9 +1,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Pill,
+  LogOut,
   Tags,
   Package,
   AlertTriangle,
@@ -29,6 +31,7 @@ import {
 import "./App.css";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+axios.defaults.withCredentials = true;
 const LOW_STOCK_LIMIT = 10;
 
 const emptyForm = {
@@ -76,6 +79,22 @@ function getStockStatus(medicine) {
 }
 
 function App() {
+  const routerNavigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
+
+  const [authUser, setAuthUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [authEmail, setAuthEmail] = useState("");
+
+  const [authPassword, setAuthPassword] = useState("");
+  const [authName, setAuthName] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
+  const [authError, setAuthError] = useState("");
+
+  const [authLoading, setAuthLoading] = useState(false);
+
   const [activePage, setActivePage] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -129,31 +148,38 @@ const [prescriptionSaving, setPrescriptionSaving] = useState(false);
   const [selectedMedicine, setSelectedMedicine] = useState("");
   const [selectedQuantity, setSelectedQuantity] = useState(1);
 
-  
+
+
 const loadData = useCallback(async () => {
   setLoading(true);
   setError("");
 
   try {
-    const [
-      medicineResponse,
-      categoryResponse,
-      customerResponse,
-      orderResponse,
-      prescriptionResponse,
-    ] = await Promise.all([
+    // Load medicines and categories for both admin and customer
+    const [medicineResponse, categoryResponse] = await Promise.all([
       axios.get(`${API}/medicines`),
       axios.get(`${API}/categories`),
-      axios.get(`${API}/customers`),
-      axios.get(`${API}/orders`),
-      axios.get(`${API}/prescriptions`),
     ]);
 
     setMedicines(getArray(medicineResponse.data));
     setCategories(getArray(categoryResponse.data));
-    setCustomers(getArray(customerResponse.data));
-    setOrders(getArray(orderResponse.data));
-    setPrescriptions(getArray(prescriptionResponse.data));
+
+    // Load management data only for admin
+    if (authUser?.role === "ROLE_ADMIN") {
+      const [
+        customerResponse,
+        orderResponse,
+        prescriptionResponse,
+      ] = await Promise.all([
+        axios.get(`${API}/customers`),
+        axios.get(`${API}/orders`),
+        axios.get(`${API}/prescriptions`),
+      ]);
+
+      setCustomers(getArray(customerResponse.data));
+      setOrders(getArray(orderResponse.data));
+      setPrescriptions(getArray(prescriptionResponse.data));
+    }
 
   } catch (err) {
     console.error(err);
@@ -161,16 +187,37 @@ const loadData = useCallback(async () => {
   } finally {
     setLoading(false);
   }
+}, [authUser]);
+
+
+
+ useEffect(() => {
+  axios
+    .get(`${API}/auth/me`)
+    .then((response) => {
+      setAuthUser(response.data);
+    })
+    .catch(() => {
+      setAuthUser(null);
+    })
+    .finally(() => {
+      setAuthChecked(true);
+    });
 }, []);
 
-
-  useEffect(() => {
+useEffect(() => {
   const fetchData = async () => {
-    await loadData();
+    if (
+      authChecked &&
+      (authUser?.role === "ROLE_ADMIN" ||
+       authUser?.role === "ROLE_CUSTOMER")
+    ) {
+      await loadData();
+    }
   };
 
   fetchData();
-}, [loadData]);
+}, [authChecked, authUser, loadData]);
 
 
   const totalMedicines = medicines.length;
@@ -514,7 +561,7 @@ const loadData = useCallback(async () => {
     );
 
     const newQuantity = (existing?.quantity || 0) + quantity;
-  
+
     const availableStock = existing
       ? Number(existing.stock || 0)
       : Number(medicine.stock || 0);
@@ -564,7 +611,7 @@ const loadData = useCallback(async () => {
     0
   );
 
-  
+
 const createOrder = async (event) => {
   event.preventDefault();
 
@@ -866,7 +913,7 @@ const editOrder = async (orderId) => {
                     {status}
                   </span>
                 </td>
-                              
+
                 <td>
                   <button
                     type="button"
@@ -902,6 +949,244 @@ const editOrder = async (orderId) => {
       </table>
     </div>
   );
+
+
+  const handleAuthSubmit = async (e) => {
+  e.preventDefault();
+  setAuthError("");
+  setAuthLoading(true);
+
+  try {
+    if (authMode === "register") {
+      await axios.post(`${API}/auth/register`, {
+        fullName: authName,
+        email: authEmail,
+        password: authPassword,
+        phone: authPhone,
+      });
+
+      setAuthMode("login");
+      setAuthName("");
+      setAuthPhone("");
+      setAuthEmail("");
+      setAuthPassword("");
+      setAuthError("Registration successful! Please log in.");
+    } else {
+      const response = await axios.post(`${API}/auth/login`, {
+        email: authEmail,
+        password: authPassword,
+      });
+
+      const user = {
+  email: response.data.email,
+  role: response.data.role,
+};
+
+if (
+  currentPath === "/admin-login" &&
+  user.role !== "ROLE_ADMIN"
+) {
+  setAuthError("This account is not an admin account.");
+  return;
+}
+
+if (
+  currentPath === "/customer-login" &&
+  user.role !== "ROLE_CUSTOMER"
+) {
+  setAuthError("This account is not a customer account.");
+  return;
+}
+
+setAuthUser(user);
+setAuthPassword("");
+
+if (user.role === "ROLE_ADMIN") {
+  routerNavigate("/admin");
+} else if (user.role === "ROLE_CUSTOMER") {
+  routerNavigate("/customer");
+} else {
+  setAuthError("Invalid user role.");
+}
+
+      setAuthUser(user);
+      setAuthPassword("");
+
+      if (user.role === "ROLE_ADMIN") {
+        routerNavigate("/admin");
+      } else if (user.role === "ROLE_CUSTOMER") {
+        routerNavigate("/customer");
+      } else {
+        setAuthError("Invalid user role.");
+      }
+    }
+  } catch (err) {
+    console.error("Authentication error:", err);
+
+    setAuthError(
+      authMode === "register"
+        ? "Registration failed. Please check your details."
+        : "Invalid email or password."
+    );
+  } finally {
+    setAuthLoading(false);
+  }
+};
+
+  const handleLogout = async () => {
+    try {
+      await axios.post(`${API}/auth/logout`);
+    } catch {
+      console.error("Logout failed");
+    } finally {
+      setAuthUser(null);
+      setAuthEmail("");
+      setAuthPassword("");
+      setActivePage("dashboard");
+    }
+  };
+
+
+  if (!authChecked) {
+  return (
+    <div className="auth-container">
+      <div className="auth-card">
+        <div className="brand-icon">
+          <Pill size={30} />
+        </div>
+        <h2>PharmaCare</h2>
+        <p>Loading your account...</p>
+      </div>
+    </div>
+  );
+}
+
+// Redirect users who are not logged in
+if (!authUser && currentPath === "/admin") {
+  return <Navigate to="/admin-login" replace />;
+}
+
+if (
+  !authUser &&
+  (currentPath === "/" || currentPath === "/customer")
+) {
+  return <Navigate to="/customer-login" replace />;
+}
+
+// Redirect logged-in users to their correct dashboard
+if (authUser?.role === "ROLE_ADMIN" &&
+    currentPath !== "/admin") {
+  return <Navigate to="/admin" replace />;
+}
+
+if (authUser?.role === "ROLE_CUSTOMER" &&
+    currentPath !== "/customer") {
+  return <Navigate to="/customer" replace />;
+}
+
+
+if (!authUser) {
+  const isAdminLogin = currentPath === "/admin-login";
+
+  return (
+    <div className="auth-container">
+      <div className="auth-card">
+        <div className="brand-icon">
+          <Pill size={30} />
+        </div>
+
+        <h2>PharmaCare</h2>
+
+        <p>
+          {isAdminLogin
+            ? "Admin Login"
+            : authMode === "login"
+            ? "Customer Login"
+            : "Create your customer account"}
+        </p>
+
+        <form onSubmit={handleAuthSubmit}>
+          {!isAdminLogin && authMode === "register" && (
+            <>
+              <label>Full Name</label>
+              <input
+                type="text"
+                value={authName}
+                onChange={(e) => setAuthName(e.target.value)}
+                placeholder="Enter your full name"
+                required
+              />
+
+              <label>Phone Number</label>
+              <input
+                type="tel"
+                value={authPhone}
+                onChange={(e) => setAuthPhone(e.target.value)}
+                placeholder="Enter your phone number"
+                required
+              />
+            </>
+          )}
+
+          <label>Email Address</label>
+          <input
+            type="email"
+            value={authEmail}
+            onChange={(e) => setAuthEmail(e.target.value)}
+            placeholder="Enter your email"
+            required
+          />
+
+          <label>Password</label>
+          <input
+            type="password"
+            value={authPassword}
+            onChange={(e) => setAuthPassword(e.target.value)}
+            placeholder="Enter your password"
+            required
+          />
+
+          {authError && (
+            <p className="auth-error">{authError}</p>
+          )}
+
+          <button type="submit" disabled={authLoading}>
+            {authLoading
+              ? "Please wait..."
+              : authMode === "register"
+              ? "Register"
+              : "Login"}
+          </button>
+        </form>
+
+        {!isAdminLogin && (
+          <p>
+            {authMode === "login"
+              ? "New customer?"
+              : "Already have an account?"}
+
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode(
+                  authMode === "login" ? "register" : "login"
+                );
+                setAuthError("");
+              }}
+            >
+              {authMode === "login"
+                ? "Create Account"
+                : "Login"}
+            </button>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
 
   return (
     <div className="app-layout">
@@ -953,6 +1238,15 @@ const editOrder = async (orderId) => {
             </button>
           ))}
         </div>
+
+        <button
+  type="button"
+  className="nav-link"
+  onClick={handleLogout}
+>
+  <LogOut size={19} />
+  <span>Logout</span>
+</button>
 
         <div className="sidebar-bottom">
           <div className="sidebar-help-icon"><CheckCircle size={20} /></div>
@@ -1141,7 +1435,7 @@ const editOrder = async (orderId) => {
                           <td><span className="customer-detail"><Phone size={15} /> {customer.phone}</span></td>
                           <td>{customer.address ? <span className="customer-detail"><MapPin size={15} /> {customer.address}</span> : "—"}</td>
                           <td>
-                             
+
 <div className="table-actions">
   <button
     type="button"
@@ -1240,7 +1534,7 @@ const editOrder = async (orderId) => {
                             <td>{order.orderDate ? new Date(order.orderDate).toLocaleString("en-IN") : "—"}</td>
                             <td><strong>₹{Number(order.totalAmount || 0).toFixed(2)}</strong></td>
                             <td>
-                              
+
                             <select
                               className={`order-status-select status-${(order.status || "PENDING").toLowerCase()}`}
                               value={order.status || "PENDING"}
@@ -1281,7 +1575,7 @@ const editOrder = async (orderId) => {
                       </tbody>
                     </table>
                   </div>
-               
+
                 </section>
 
                 <button
@@ -1349,7 +1643,7 @@ const editOrder = async (orderId) => {
                                 <td>{order.shippingAddress || "—"}</td>
                               </tr>
                             ))}
-                            
+
                           </tbody>
                         </table>
                       </div>
@@ -1564,7 +1858,7 @@ const editOrder = async (orderId) => {
   </span>
 </td>
                               <td>{prescription.pharmacistRemarks || "—"}</td>
-                              
+
                               <td>
                                 <div className="table-actions">
                                     <button
@@ -1689,7 +1983,7 @@ const editOrder = async (orderId) => {
 
 
       </main>
-  
+
       {/* MEDICINE FORM */}
       {showForm && (
         <div className="modal-backdrop">
@@ -1731,7 +2025,7 @@ const editOrder = async (orderId) => {
                   required
                 />
                 </label>
-                
+
                 <label>
                   Category *
                   <select name="categoryId" value={form.categoryId} onChange={handleFormChange} required>
@@ -1842,7 +2136,7 @@ const editOrder = async (orderId) => {
       {showOrderForm && (
         <div className="modal-backdrop">
           <div className="medicine-modal order-modal">
-            <div className="modal-heading">           
+            <div className="modal-heading">
               <div>
                 <h2>{editingOrderId ? "Edit Order" : "Create New Order"}</h2>
                 <p>
@@ -1982,7 +2276,7 @@ const editOrder = async (orderId) => {
                   <strong>₹{cartTotal.toFixed(2)}</strong>
                 </div>
               </div>
-              
+
               <div className="modal-actions">
                 <button
                   type="button"
@@ -2019,7 +2313,7 @@ const editOrder = async (orderId) => {
         </div>
   );
 }
-  
+
 function StatCard({ icon, color, label, value }) {
   return (
     <div className="stat-card">
