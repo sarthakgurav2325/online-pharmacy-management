@@ -1,6 +1,8 @@
 
 package PharmacyManagement.controller;
 
+import org.springframework.security.core.Authentication;
+
 import PharmacyManagement.entity.Order;
 import PharmacyManagement.entity.OrderItem;
 import PharmacyManagement.entity.Customer;
@@ -35,6 +37,18 @@ public List<Order> getCustomerOrders(
 
     return orderService.getCustomerOrders(customerId);
 }
+
+
+@GetMapping("/my")
+public ResponseEntity<List<Order>> getMyOrders(
+        Authentication authentication) {
+
+    List<Order> orders =
+            orderService.getMyOrders(authentication.getName());
+
+    return ResponseEntity.ok(orders);
+}
+
 
     @GetMapping("/{id}")
     public Order getOrderById(@PathVariable Integer id) {

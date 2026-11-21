@@ -94,6 +94,7 @@ function App() {
   const [authError, setAuthError] = useState("");
 
   const [authLoading, setAuthLoading] = useState(false);
+  const [adminCreateMode, setAdminCreateMode] = useState(false);
 
   const [activePage, setActivePage] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -204,6 +205,8 @@ const loadData = useCallback(async () => {
       setAuthChecked(true);
     });
 }, []);
+
+
 
 useEffect(() => {
   const fetchData = async () => {
@@ -951,13 +954,36 @@ const editOrder = async (orderId) => {
   );
 
 
-  const handleAuthSubmit = async (e) => {
+
+const handleAuthSubmit = async (e) => {
   e.preventDefault();
   setAuthError("");
   setAuthLoading(true);
 
+  const isAdminLogin = currentPath === "/admin-login";
+  const isAdminRegister = isAdminLogin && adminCreateMode;
+  const isCustomerRegister = !isAdminLogin && authMode === "register";
+
   try {
-    if (authMode === "register") {
+    // ADMIN REGISTRATION
+    if (isAdminRegister) {
+      await axios.post(`${API}/auth/register-admin`, {
+        fullName: authName,
+        email: authEmail,
+        password: authPassword,
+        phone: authPhone,
+      });
+
+      setAdminCreateMode(false);
+      setAuthName("");
+      setAuthPhone("");
+      setAuthEmail("");
+      setAuthPassword("");
+      setAuthError("Admin account created successfully! Please log in.");
+    }
+
+    // CUSTOMER REGISTRATION
+    else if (isCustomerRegister) {
       await axios.post(`${API}/auth/register`, {
         fullName: authName,
         email: authEmail,
@@ -971,67 +997,61 @@ const editOrder = async (orderId) => {
       setAuthEmail("");
       setAuthPassword("");
       setAuthError("Registration successful! Please log in.");
-    } else {
-      const response = await axios.post(`${API}/auth/login`, {
-        email: authEmail,
-        password: authPassword,
-      });
-
-      const user = {
-  email: response.data.email,
-  role: response.data.role,
-};
-
-if (
-  currentPath === "/admin-login" &&
-  user.role !== "ROLE_ADMIN"
-) {
-  setAuthError("This account is not an admin account.");
-  return;
-}
-
-if (
-  currentPath === "/customer-login" &&
-  user.role !== "ROLE_CUSTOMER"
-) {
-  setAuthError("This account is not a customer account.");
-  return;
-}
-
-setAuthUser(user);
-setAuthPassword("");
-
-if (user.role === "ROLE_ADMIN") {
-  routerNavigate("/admin");
-} else if (user.role === "ROLE_CUSTOMER") {
-  routerNavigate("/customer");
-} else {
-  setAuthError("Invalid user role.");
-}
-
-      setAuthUser(user);
-      setAuthPassword("");
-
-      if (user.role === "ROLE_ADMIN") {
-        routerNavigate("/admin");
-      } else if (user.role === "ROLE_CUSTOMER") {
-        routerNavigate("/customer");
-      } else {
-        setAuthError("Invalid user role.");
-      }
     }
+
+    // LOGIN
+    
+else {
+  await axios.post(`${API}/auth/login`, {
+    email: authEmail,
+    password: authPassword,
+  });
+
+  // Fetch complete logged-in user details
+  const meResponse = await axios.get(`${API}/auth/me`);
+
+  const user = meResponse.data;
+
+  if (isAdminLogin && user.role !== "ROLE_ADMIN") {
+    setAuthError("This account is not an admin account.");
+    return;
+  }
+
+  if (!isAdminLogin && user.role !== "ROLE_CUSTOMER") {
+    setAuthError("This account is not a customer account.");
+    return;
+  }
+
+  setAuthUser(user);
+  setAuthPassword("");
+
+  if (user.role === "ROLE_ADMIN") {
+    routerNavigate("/admin");
+  } else if (user.role === "ROLE_CUSTOMER") {
+    routerNavigate("/customer");
+  } else {
+    setAuthError("Invalid user role.");
+  }
+}
+
   } catch (err) {
     console.error("Authentication error:", err);
 
+    const message = err.response?.data?.message;
+
     setAuthError(
-      authMode === "register"
+      message ||
+      (isAdminRegister
+        ? "Admin registration failed. Please check your details."
+        : isCustomerRegister
         ? "Registration failed. Please check your details."
-        : "Invalid email or password."
+        : "Invalid email or password.")
     );
   } finally {
     setAuthLoading(false);
   }
 };
+
 
   const handleLogout = async () => {
     try {
@@ -1085,8 +1105,10 @@ if (authUser?.role === "ROLE_CUSTOMER" &&
 }
 
 
+
 if (!authUser) {
   const isAdminLogin = currentPath === "/admin-login";
+  const isAdminRegister = isAdminLogin && adminCreateMode;
 
   return (
     <div className="auth-container">
@@ -1099,14 +1121,17 @@ if (!authUser) {
 
         <p>
           {isAdminLogin
-            ? "Admin Login"
+            ? isAdminRegister
+              ? "Create Admin Account"
+              : "Admin Login"
             : authMode === "login"
             ? "Customer Login"
             : "Create your customer account"}
         </p>
 
         <form onSubmit={handleAuthSubmit}>
-          {!isAdminLogin && authMode === "register" && (
+          {((!isAdminLogin && authMode === "register") ||
+            isAdminRegister) && (
             <>
               <label>Full Name</label>
               <input
@@ -1146,20 +1171,52 @@ if (!authUser) {
             required
           />
 
-          {authError && (
-            <p className="auth-error">{authError}</p>
-          )}
+         {authError && (
+  <p
+    className={
+      authError.toLowerCase().includes("successfully")
+        ? "auth-success"
+        : "auth-error"
+    }
+  >
+    {authError}
+  </p>
+)}
 
           <button type="submit" disabled={authLoading}>
             {authLoading
               ? "Please wait..."
-              : authMode === "register"
+              : isAdminRegister
+              ? "Create Admin Account"
+              : !isAdminLogin && authMode === "register"
               ? "Register"
               : "Login"}
           </button>
         </form>
 
-        {!isAdminLogin && (
+        {isAdminLogin ? (
+          <p className="auth-switch">
+            {adminCreateMode
+              ? "Already have an admin account?"
+              : "New administrator?"}
+
+            <button
+              type="button"
+              onClick={() => {
+                setAdminCreateMode(!adminCreateMode);
+                setAuthError("");
+                setAuthName("");
+                setAuthPhone("");
+                setAuthEmail("");
+                setAuthPassword("");
+              }}
+            >
+              {adminCreateMode
+                ? "Admin Login"
+                : "Create Admin Account"}
+            </button>
+          </p>
+        ) : (
           <p>
             {authMode === "login"
               ? "New customer?"
@@ -1184,6 +1241,7 @@ if (!authUser) {
     </div>
   );
 }
+
 
 
 
@@ -1366,7 +1424,7 @@ if (!authUser) {
                   </button>
                 </div>
 
-                <div className="toolbar">
+                <div className="toolbar medicine-toolbar">
                   <div className="search-box">
                     <Search size={18} />
                     <input
@@ -1403,7 +1461,7 @@ if (!authUser) {
                   </button>
                 </div>
 
-                <div className="toolbar">
+                <div className="toolbar customer-toolbar">
                   <div className="search-box">
                     <Search size={18} />
                     <input
@@ -1501,17 +1559,31 @@ if (!authUser) {
                     </button>
                   </div>
 
-                  <div className="toolbar">
-                    <div className="search-box">
-                      <Search size={18} />
-                      <input
-                        placeholder="Search by order ID, customer or status..."
-                        value={orderSearch}
-                        onChange={(event) => setOrderSearch(event.target.value)}
-                      />
-                    </div>
-                    <span className="result-count">{filteredOrders.length} orders</span>
-                  </div>
+                  <div className="orders-toolbar">
+  <div className="search-box">
+    <Search size={18} />
+    <input
+      placeholder="Search by order ID, customer or status..."
+      value={orderSearch}
+      onChange={(event) => setOrderSearch(event.target.value)}
+    />
+  </div>
+
+  <span className="result-count">
+    {filteredOrders.length} orders
+  </span>
+
+  <button
+    type="button"
+    className="clear-filter-button"
+    onClick={() => {
+      setOrderSearch("");
+      setOrderStatusFilter("ALL");
+    }}
+  >
+    Clear Filters
+  </button>
+</div>
 
                   <div className="table-wrapper">
                     <table className="medicine-table">
@@ -1578,16 +1650,7 @@ if (!authUser) {
 
                 </section>
 
-                <button
-  type="button"
-  className="clear-filter-button"
-  onClick={() => {
-    setOrderSearch("");
-    setOrderStatusFilter("ALL");
-  }}
->
-  Clear Filters
-</button>
+                
 
                 {showCustomerOrderHistory && (
                   <section className="content-card">
@@ -1749,7 +1812,7 @@ if (!authUser) {
                     </div>
                   </form>
 
-                  <div className="toolbar">
+                  <div className="toolbar prescription-toolbar">
                     <div className="search-box">
                       <Search size={18} />
                       <input

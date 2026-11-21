@@ -46,6 +46,18 @@ public class OrderService {
     return orderRepository.findByCustomerIdOrderByOrderDateDesc(customerId);
 }
 
+
+public List<Order> getMyOrders(String email) {
+
+    var customer = customerRepository.findByEmail(email)
+            .orElseThrow(() ->
+                    new RuntimeException("Customer not found"));
+
+    return orderRepository
+            .findByCustomerIdOrderByOrderDateDesc(customer.getId());
+}
+
+
     public Order getOrderById(Integer id) {
         return orderRepository.findById(id)
                 .orElseThrow(() ->

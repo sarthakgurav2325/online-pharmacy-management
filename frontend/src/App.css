@@ -432,12 +432,57 @@ button {
 
 /* Search */
 
-.toolbar {
+.orders-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 20px;
+  width: 100%;
+  min-height: 60px;
+  gap: 16px;
+  padding: 10px 14px;
+  margin: 20px 0;
+  border: 1px solid #dbe5e0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.orders-toolbar .search-box {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.orders-toolbar .search-box input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.orders-toolbar .result-count {
+  color: #64748b;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.orders-toolbar .clear-filter-button {
+  background: #16a34a;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 18px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .search-box {
@@ -954,6 +999,9 @@ button {
     align-items: stretch;
     flex-direction: column;
   }
+  .prescription-toolbar {
+  margin-top: 25px;
+}
 
   .search-box {
     width: 100%;
@@ -1343,6 +1391,7 @@ button {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  margin-bottom: 18px;
 }
 
 .clear-filter-button:hover {
@@ -1353,4 +1402,439 @@ button {
 
 .clear-filter-button:active {
   transform: translateY(0);
+}
+
+
+/* ==========================================
+   PHARMACARE - PROFESSIONAL THEME UPGRADE
+========================================== */
+
+:root {
+  --pharma-primary: #12804a;
+  --pharma-dark: #075c36;
+  --pharma-light: #e8f7ef;
+  --pharma-bg: #f3f8f5;
+  --pharma-text: #1e293b;
+  --pharma-muted: #64748b;
+  --pharma-border: #e2ece5;
+}
+
+/* Global theme */
+
+body {
+  background: var(--pharma-bg);
+  color: var(--pharma-text);
+}
+
+::selection {
+  background: #bbf7d0;
+  color: #075c36;
+}
+
+/* Sidebar */
+
+.sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fcf8 100%);
+  border-right: 1px solid var(--pharma-border);
+}
+
+.brand-icon {
+  background: var(--pharma-light);
+  color: var(--pharma-primary);
+}
+
+.nav-link.active {
+  background: #dcfce7;
+  color: var(--pharma-dark);
+  box-shadow: inset 3px 0 0 var(--pharma-primary);
+}
+
+.nav-link:hover {
+  background: #effaf2;
+  color: var(--pharma-primary);
+}
+
+/* Main dashboard */
+
+.main-content {
+  background: var(--pharma-bg);
+}
+
+.topbar {
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--pharma-border);
+}
+
+.topbar h1 {
+  color: var(--pharma-dark);
+}
+
+/* Welcome banner */
+
+.welcome-banner {
+  background: linear-gradient(120deg, #075c36, #12804a, #22a467);
+  box-shadow: 0 10px 28px rgba(18, 128, 74, 0.15);
+}
+
+/* Statistics */
+
+.stat-card {
+  border-radius: 15px;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.035);
+}
+
+.stat-card:nth-child(1) {
+  background: #edf5ff;
+  border-color: #d8e8fc;
+}
+
+.stat-card:nth-child(2) {
+  background: #e8f8ee;
+  border-color: #c9ecd5;
+}
+
+.stat-card:nth-child(3) {
+  background: #fff8e9;
+  border-color: #f7e8bd;
+}
+
+.stat-card:nth-child(4) {
+  background: #f3edff;
+  border-color: #e5d9ff;
+}
+
+/* Content cards */
+
+.content-card,
+.category-card {
+  border-radius: 15px;
+  border-color: var(--pharma-border);
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.025);
+}
+
+.content-card:hover,
+.category-card:hover {
+  box-shadow: 0 10px 25px rgba(18, 128, 74, 0.07);
+}
+
+/* Buttons */
+
+.primary-button {
+  background: var(--pharma-primary);
+  border-radius: 9px;
+}
+
+.primary-button:hover {
+  background: var(--pharma-dark);
+}
+
+.text-button {
+  color: var(--pharma-primary);
+}
+
+.refresh-button:hover {
+  border-color: var(--pharma-primary);
+  color: var(--pharma-primary);
+}
+
+/* Search and inputs */
+
+.search-box:focus-within {
+  border-color: var(--pharma-primary);
+  box-shadow: 0 0 0 3px rgba(18, 128, 74, 0.08);
+}
+
+.form-grid input:focus,
+.form-grid select:focus,
+.form-grid textarea:focus {
+  border-color: var(--pharma-primary);
+  box-shadow: 0 0 0 3px rgba(18, 128, 74, 0.08);
+}
+
+/* Tables */
+
+.medicine-table th {
+  background: #f0f7f2;
+  color: #52705d;
+}
+
+.medicine-table tbody tr:hover {
+  background: #f5fbf6;
+  box-shadow: inset 3px 0 0 var(--pharma-primary);
+}
+
+/* Categories */
+
+.category-card:hover {
+  border-color: #86d9a5;
+}
+
+/* Modal */
+
+.medicine-modal {
+  border: 1px solid var(--pharma-border);
+  border-radius: 18px;
+}
+
+.modal-heading h2 {
+  color: var(--pharma-dark);
+}
+
+/* ==========================================
+   LOGIN & REGISTRATION
+========================================== */
+
+.auth-container {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 25px 15px;
+  background:
+    radial-gradient(circle at top left, #d9f5e3 0, transparent 40%),
+    radial-gradient(circle at bottom right, #c9eed8 0, transparent 35%),
+    #f3faf5;
+  font-family: "Inter", sans-serif;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 38px 35px;
+  background: #ffffff;
+  border: 1px solid #e0eee4;
+  border-radius: 20px;
+  box-shadow: 0 18px 55px rgba(7, 92, 54, 0.10);
+  text-align: center;
+  animation: pharmaAppear 0.4s ease;
+}
+
+@keyframes pharmaAppear {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Authentication brand icon */
+
+.auth-card .brand-icon {
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  background: #e5f7eb;
+  color: #12804a;
+}
+
+/* Authentication headings */
+
+.auth-card h2 {
+  color: #075c36;
+  font-size: 29px;
+  font-weight: 800;
+  margin-bottom: 9px;
+}
+
+.auth-card > p {
+  color: #718078;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 25px;
+}
+
+/* Authentication form */
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  text-align: left;
+}
+
+.auth-card input {
+  width: 100%;
+  min-height: 49px;
+  padding: 12px 15px;
+  border: 1px solid #dce9df;
+  border-radius: 10px;
+  background: #fbfdfb;
+  color: #26382c;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.auth-card input::placeholder {
+  color: #9aa89f;
+}
+
+.auth-card input:focus {
+  border-color: #12804a;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(18, 128, 74, 0.10);
+}
+
+/* Authentication submit button */
+
+.auth-card form button {
+  width: 100%;
+  min-height: 49px;
+  margin-top: 5px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(110deg, #087443, #16a05e);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.auth-card form button:hover {
+  background: linear-gradient(110deg, #075c36, #12804a);
+  transform: translateY(-2px);
+  box-shadow: 0 7px 17px rgba(18, 128, 74, 0.2);
+}
+
+/* Switch login/register */
+
+.auth-card .auth-switch {
+  margin-top: 22px;
+  color: #718078;
+  font-size: 13px;
+}
+
+.auth-card a {
+  color: #12804a;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-card a:hover {
+  color: #075c36;
+  text-decoration: underline;
+}
+
+/* Authentication messages */
+
+.auth-card .error-message {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 11px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.auth-card .success-message {
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 11px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+/* Mobile authentication */
+
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 30px 22px;
+    border-radius: 16px;
+  }
+
+  .auth-card h2 {
+    font-size: 25px;
+  }
+}
+
+/* Reduce animation for accessibility */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.auth-card button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.auth-card button[type="button"] {
+  background: transparent;
+  border: none;
+  color: #07834e;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 4px;
+  border-radius: 6px;
+  transition: 0.2s ease;
+}
+
+.auth-card button[type="button"]:hover {
+  color: #05683e;
+  text-decoration: underline;
+}
+
+.auth-error {
+  color: #dc2626 !important;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 12px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.auth-success {
+  color: #16a34a;
+  background: #dcfce7;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin: 10px 0;
+}
+
+/* Spacing for Prescription Management toolbar */
+.toolbar.prescription-toolbar {
+  margin-top: 35px !important;
+  margin-bottom: 20px !important;
+}
+
+.prescription-toolbar .secondary-button {
+  background-color: #16a34a;
+  color: #ffffff;
+  border: 1px solid #16a34a;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.prescription-toolbar .secondary-button:hover {
+  background-color: #15803d;
+  border-color: #15803d;
+  color: #ffffff;
+}
+
+.toolbar.customer-toolbar {
+  margin-top: 25px;
+  margin-bottom: 20px;
+}
+
+.toolbar.medicine-toolbar {
+  margin-top: 25px;
+  margin-bottom: 20px;
 }
